@@ -193,5 +193,3 @@ async def on_voice_state_update(member, before, after):
         await voice_client.disconnect()
 
 bot.run(BOT_TOKEN)
-
-#End
