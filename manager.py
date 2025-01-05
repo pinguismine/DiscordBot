@@ -10,8 +10,15 @@ import ctypes.util
 
 # Manually load Opus
 # discord.opus.load_opus('/opt/homebrew/Cellar/opus/1.5.2/lib/libopus.dylib')
-discord.opus.load_opus(None)
-print(f"Is Opus loaded? {discord.opus.is_loaded()}")
+# discord.opus.load_opus(None)
+# print(f"Is Opus loaded? {discord.opus.is_loaded()}")
+
+# Dynamically find and load the Opus library
+libopus_path = ctypes.util.find_library('opus')
+if libopus_path:
+    discord.opus.load_opus(libopus_path)
+else:
+    raise RuntimeError("Opus library not found. Please install libopus-dev.")
 
 # Load environment variables
 load_dotenv()
