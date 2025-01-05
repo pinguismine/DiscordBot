@@ -51,7 +51,12 @@ async def join_channel(ctx):
 
     channel = ctx.author.voice.channel
     await channel.connect()
-    await ctx.send(f"Joined {channel.name}!")
+    await ctx.send(f"""
+                Joined **{channel.name}**!
+                Fenrys says nyan ~ 
+                Type !playaudio for selection menu
+                """)
+
 
 @bot.command(name="leave")
 async def leave_channel(ctx):
@@ -80,6 +85,8 @@ async def play_audio(ctx):
     selected_file_path = None
     current_playback_position = 0
     is_paused = False
+
+    await ctx.send("Fenrys is here to support you! <:heart_emoji:123456789012345678>")
 
     # Dropdown to select an audio file
     class AudioSelect(Select):
