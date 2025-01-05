@@ -9,7 +9,8 @@ import ctypes
 import ctypes.util
 
 # Manually load Opus
-discord.opus.load_opus('/opt/homebrew/Cellar/opus/1.5.2/lib/libopus.dylib')
+# discord.opus.load_opus('/opt/homebrew/Cellar/opus/1.5.2/lib/libopus.dylib')
+discord.opus.load_opus(None)
 print(f"Is Opus loaded? {discord.opus.is_loaded()}")
 
 # Load environment variables
