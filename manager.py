@@ -60,17 +60,41 @@ async def join_channel(ctx):
 
 @bot.command(name="leave")
 async def leave_channel(ctx):
+    global active_controllers
+
     if ctx.voice_client:
+        # Remove the active controller for the channel
+        if ctx.voice_client.channel.id in active_controllers:
+            del active_controllers[ctx.voice_client.channel.id]
+
         await ctx.voice_client.disconnect()
         await ctx.send("Disconnected from the voice channel.")
     else:
         await ctx.send("I'm not in a voice channel.")
 
+        
+active_controllers = {}
 @bot.command(name="playaudio")
 async def play_audio(ctx):
+    global active_controllers
+
+    guild_id = ctx.guild.id  # Server (guild) ID
+    channel_id = ctx.voice_client.channel.id if ctx.voice_client else None
+
+    # Check if someone else is already controlling the bot in this guild and channel
+    if channel_id and channel_id in active_controllers:
+        current_controller = active_controllers[channel_id]
+        if current_controller != ctx.author.id:
+            await ctx.send(f"🔒 The bot is currently controlled by **{bot.get_user(current_controller).name}**. Please wait until they release control.")
+            return
+
     if not ctx.author.voice:
         await ctx.send("You must be in a voice channel to use this command!")
         return
+
+    # Assign the current user as the active controller
+    if ctx.voice_client:
+        active_controllers[ctx.voice_client.channel.id] = ctx.author.id
 
     # Get list of audio files in the directory
     audio_files = [f for f in os.listdir(AUDIO_DIRECTORY) if f.lower().endswith(('.mp4', '.mp3'))]
@@ -81,12 +105,12 @@ async def play_audio(ctx):
 
     print(f"Filtered audio files: {audio_files}")  # Debugging
 
-    # Store the selected file path and playback state
+    # Track the invoking user and playback state
     selected_file_path = None
     current_playback_position = 0
     is_paused = False
 
-    await ctx.send("Fenrys is here to support you! <:heart_emoji:123456789012345678>")
+    await ctx.send(f"🔊 **{ctx.author.name}** is controlling playback. Select an audio file below.")
 
     # Dropdown to select an audio file
     class AudioSelect(Select):
@@ -98,6 +122,10 @@ async def play_audio(ctx):
 
         async def callback(self, interaction):
             nonlocal selected_file_path, current_playback_position, is_paused
+            if interaction.user.id != active_controllers.get(ctx.voice_client.channel.id):
+                await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+                return
+
             selected_file = self.values[0]
             selected_file_path = os.path.join(AUDIO_DIRECTORY, selected_file)
             current_playback_position = 0
@@ -109,12 +137,16 @@ async def play_audio(ctx):
     # Buttons for controlling playback
     start_button = Button(label="Start", style=discord.ButtonStyle.green)
     pause_button = Button(label="Pause", style=discord.ButtonStyle.gray)
-    stop_button = Button(label="Stop", style=discord.ButtonStyle.red)
+    fast_forward_button = Button(label="+5s", style=discord.ButtonStyle.blurple)
     replay_button = Button(label="Replay", style=discord.ButtonStyle.blurple)
 
     # Button click events
     async def start_callback(interaction):
         nonlocal selected_file_path, current_playback_position, is_paused
+        if interaction.user.id != active_controllers.get(ctx.voice_client.channel.id):
+            await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+            return
+
         if not selected_file_path:
             await interaction.response.send_message("No file selected. Please select a file first.", ephemeral=True)
             return
@@ -139,8 +171,12 @@ async def play_audio(ctx):
         is_paused = False
         await interaction.response.send_message("Playback started!", ephemeral=True)
 
+
     async def pause_callback(interaction):
         nonlocal current_playback_position, is_paused
+        if interaction.user.id != active_controllers.get(ctx.voice_client.channel.id):
+            await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+            return
         vc = ctx.voice_client
         if vc and vc.is_playing() and not is_paused:
             vc.stop()
@@ -154,17 +190,38 @@ async def play_audio(ctx):
         else:
             await interaction.response.send_message("No audio is playing.", ephemeral=True)
 
-    async def stop_callback(interaction):
-        nonlocal current_playback_position, is_paused
+    async def fast_forward_callback(interaction):
+        nonlocal selected_file_path, current_playback_position
+        if interaction.user.id != active_controllers.get(ctx.voice_client.channel.id):
+            await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+            return
+        if not selected_file_path:
+            await interaction.response.send_message("No file selected. Please select a file first.", ephemeral=True)
+            return
+
         vc = ctx.voice_client
         if vc and vc.is_playing():
             vc.stop()
-        current_playback_position = 0
-        is_paused = False
-        await interaction.response.send_message("Playback stopped.", ephemeral=True)
+
+        # Fast forward by 5 seconds
+        current_playback_position += 5
+        print(f"Fast-forwarding to position: {current_playback_position}")
+
+        vc.play(
+            discord.FFmpegPCMAudio(
+                selected_file_path,
+                before_options=f"-ss {current_playback_position}"
+            ),
+            after=lambda e: print(f"Finished playing: {e}")
+        )
+
+        await interaction.response.send_message("Fast-forwarded by 5 seconds!", ephemeral=True)
 
     async def replay_callback(interaction):
         nonlocal selected_file_path, current_playback_position, is_paused
+        if interaction.user.id != active_controllers.get(ctx.voice_client.channel.id):
+            await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+            return
         if not selected_file_path:
             await interaction.response.send_message("No file selected. Please select a file first.", ephemeral=True)
             return
@@ -181,20 +238,20 @@ async def play_audio(ctx):
         vc.play(discord.FFmpegPCMAudio(selected_file_path), after=lambda e: print(f"Finished playing: {e}"))
         current_playback_position = 0
         is_paused = False
-        await interaction.response.send_message("Replaying the file.", ephemeral=True)
+        await interaction.response.send_message("Replaying the file from the beginning.", ephemeral=True)
 
     # Assign callbacks to buttons
     start_button.callback = start_callback
     pause_button.callback = pause_callback
-    stop_button.callback = stop_callback
+    fast_forward_button.callback = fast_forward_callback
     replay_button.callback = replay_callback
 
     # Create a view for the dropdown and buttons
-    view = View()
+    view = View(timeout=1200)
     view.add_item(AudioSelect())
     view.add_item(start_button)
     view.add_item(pause_button)
-    view.add_item(stop_button)
+    view.add_item(fast_forward_button)
     view.add_item(replay_button)
 
     # Send the message with dropdown and buttons
@@ -209,4 +266,3 @@ async def on_voice_state_update(member, before, after):
 
 bot.run(BOT_TOKEN)
 
-#hi
